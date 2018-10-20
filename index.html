@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>HWiNFO</title>
+    </head>
+    <body style="font-family: 'Segoe UI'; font-size: 30px; background-color: #000; color: #f0f0f0; margin-left: 30px">
+	<div id="main">
+		<div style="font-size: 90px; font-weight: bold">CPU <span id="cpu_usage"></span></div>
+		<div>FAN: <span id="fan"></span> TEMP: <span id="cpu_temp"></span></div>
+		<div style="font-size: 90px; font-weight: bold">GPU <span id="gpu_usage"></span></div>
+		<div>DED: <span id="gpu_ded"></span> DYN: <span id="gpu_dyn"></span></div>
+		<div style="font-size: 90px; font-weight: bold">MEM <span id="mem_usage"></span></div>
+		<div>Page: <span id="mem_page"></span> Virt: <span id="mem_virtual"></span>
+		<div style="font-size: 90px; font-weight: bold">SYS <span id="sys_watt"></span></div>
+		<div>FAN: <span id="sys_fan"></span> TEMP: <span id="sys_temp"></span></div>
+		<div style="font-size: 90px; font-weight: bold">SSD <span id="ssd_usage"></span></div>
+		<div>LIFE: <span id="ssd_life"></span> TEMP: <span id="ssd_temp"></span></div>
+		<div style="font-size: 90px; font-weight: bold">HDD <span id="hdd_usage"></span></div>
+		<div>TEMP: <span id="hdd_temp"></span></div>
+		
+		<div style="position: fixed; bottom: 0; right: 0; font-style: italic; font-size: smaller; color: grey;">AGE: <span id="age"></span></div>
+	</div>
+    <script>
+      window.onload = function() {
+		document.getElementById("main").onclick = function() {
+			document.documentElement.mozRequestFullScreen();
+		};
+		
+		hwinfo = {
+			"offset": 0,
+			"header": {},
+			"sensors": {},
+			"get": function(sensorid, readingid, param = false) {
+				if(!(sensorid in this.sensors)) {
+					return "error in get, sensorid (" + sensorid + ") not found";
+				}
+				
+				if(!(readingid in this.sensors[sensorid]["readings"])) {
+					return "error in get, readingid (" + readingid + ") not found";
+				}
+				
+				if(param) {
+					if(!(param in this.sensors[sensorid]["readings"][readingid]))
+						return "error in get, param (" + param + ") not found";
+					return this.sensors[sensorid]["readings"][readingid][param];
+				}
+				
+				return Math.round(this.sensors[sensorid]["readings"][readingid]["Value"]) + this.sensors[sensorid]["readings"][readingid]["szUnit"];
+			},
+			"list": function(tabled = false) {
+				if(tabled) {
+					var table = [];
+					this.sensors.forEach(function(sensor) { 
+						for(idx in sensor.readings) {
+							var element = sensor.readings[idx];
+							table.push({
+								"command": "hwinfo.get(" + element.dwSensorIndex + ", " + idx + ")",
+								"sensor": sensor.name,
+								"reading": element.szLabelUser,
+								"value": Math.round(element.Value) + "" + element.szUnit
+							});
+						}
+					});
+					
+					console.table(table);
+				} else {
+					this.sensors.forEach(function(sensor) { 
+						for(idx in sensor.readings) {
+							var element = sensor.readings[idx];
+							console.log("hwinfo.get(" + element.dwSensorIndex + ", " + idx + ") // " + element.szLabelUser + ":" + Math.round(element.Value) + "" + element.szUnit + " (" + sensor.name + ")");
+						}
+					});
+				}
+			}			
+		};
+		
+		var updateDisplay = function() {
+			set("cpu_usage", hwinfo.get(1, 7000005));
+			set("gpu_usage", hwinfo.get(10, 7000000));
+			set("ssd_usage", hwinfo.get(8, 7000002));
+			set("hdd_usage", hwinfo.get(8, 7000002));
+			set("mem_usage", hwinfo.get(0, 8000005));
+			set("mem_page", hwinfo.get(0, 8000006));
+			set("mem_virtual", hwinfo.get(0, 8000002));
+			set("fan", hwinfo.get(4, 3000001));
+			set("cpu_temp", hwinfo.get(4, 1000001));
+			set("gpu_ded", hwinfo.get(10, 8000001));
+			set("gpu_dyn", hwinfo.get(10, 8000002));
+			set("ssd_life", hwinfo.get(6, 7000000));
+			set("ssd_temp", hwinfo.get(6, 1000000));
+			set("hdd_usage", hwinfo.get(9, 7000002));
+			set("hdd_temp", hwinfo.get(7, 1000000));
+			set("sys_watt", hwinfo.get(3, 5000007));
+			set("sys_temp", hwinfo.get(4, 1000000));
+			set("sys_fan", hwinfo.get(4, 3000002));
+		}
+	  
+		var set = function(elementid, value) {
+			document.getElementById(elementid).innerHTML = value;
+		}
+			
+		var formatHWiNFO = function(d) {
+			hwinfo.header = d.HWiNFOMemory,
+			hwinfo.sensors = [];
+			
+			d.sensorElements.forEach(function(element) {
+				if(!(element.dwSensorIndex in hwinfo.sensors)) {
+					hwinfo.sensors[element.dwSensorIndex] = {
+						"name": d.sensorGroups[element.dwSensorIndex]["szSensorNameUser"],
+						"readings": {}
+					};
+				}
+				
+				hwinfo.sensors[element.dwSensorIndex]["readings"][element.dwReadingID.toString(16)] = element;
+			});
+			
+			return hwinfo;
+		}
+
+		var parseResponse = function(request) {	
+			hwinfo.offset = (new Date().setMilliseconds(0) - new Date(request.getResponseHeader("Date"))) / 1000;
+			
+			formatHWiNFO(JSON.parse(request.response));
+			
+			updateDisplay();
+		}
+		
+		var requestData = function() {
+			var httpRequest = new XMLHttpRequest();
+			httpRequest.onreadystatechange = function () {
+				if (httpRequest.readyState == 4 && httpRequest.status == 200)
+					parseResponse(httpRequest);
+			}
+			httpRequest.open('GET', 'data.json');
+			httpRequest.send();
+		}
+		
+		var tick = function() {
+			var age = 0;
+			if ("poll_time" in hwinfo.header)
+				age =  new Date().setMilliseconds(0) / 1000 - hwinfo.header.poll_time - hwinfo.offset;
+			
+			set("age", age + "s");
+		}
+		requestData();
+		setInterval(requestData, 2000);
+		setInterval(tick, 1000);
+	  }
+    </script>
+    </body>
+</html>
